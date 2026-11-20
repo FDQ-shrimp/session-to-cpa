@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session → CPA 一键保存</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { max-width: 680px; margin: 0 auto; padding: 20px 16px 40px; font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 14.5px; line-height: 1.6; }
+  h1 { font-size: 21px; margin: 0 0 4px; }
+  .sub { opacity: .7; font-size: 13px; margin-bottom: 18px; }
+  .card { border: 1px solid #8886; border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; }
+  .card h2 { font-size: 15.5px; margin: 0 0 8px; }
+  label { display: block; font-weight: 600; margin: 10px 0 4px; }
+  .hint { font-weight: 400; font-size: 12.5px; opacity: .68; }
+  input[type="text"], input[type="password"], textarea { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #8887; border-radius: 8px; background: transparent; color: inherit; font-size: 13.5px; font-family: inherit; }
+  textarea { min-height: 74px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  button, .bm { padding: 9px 14px; border-radius: 8px; border: 1px solid #8887; background: transparent; color: inherit; cursor: pointer; font-size: 13.5px; text-decoration: none; display: inline-block; }
+  button.primary, .bm { background: #2563eb; border-color: #2563eb; color: #fff; font-weight: 600; }
+  button.small { padding: 5px 10px; font-size: 12.5px; }
+  #status { margin-top: 12px; font-size: 13px; white-space: pre-wrap; word-break: break-all; }
+  .ok { color: #16a34a; } .warn { color: #d97706; } .err { color: #dc2626; }
+  .acct { border: 1px dashed #8888; border-radius: 8px; padding: 8px 10px; margin-top: 10px; font-size: 13px; display: none; white-space: pre-wrap; }
+  .check { display: flex; align-items: center; gap: 6px; font-weight: 400; font-size: 13px; margin-top: 8px; }
+  .drop { border: 1.5px dashed #8887; border-radius: 8px; padding: 10px; text-align: center; opacity: .85; margin-top: 10px; font-size: 13px; }
+  .drop.over { border-color: #2563eb; opacity: 1; }
+  ol { margin: 6px 0 0; padding-left: 20px; } li { margin: 2px 0; }
+  .foot { font-size: 12.5px; opacity: .7; margin-top: 16px; }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+</style>
+</head>
+<body>
+  <h1>Session → CPA 一键保存</h1>
+  <div class="sub">把当前登录的 ChatGPT 账号 session 一键变成 CPA 凭证，直接保存进你的 CPA。纯网页，无需安装任何扩展。</div>
+
+  <div class="card">
+    <h2>① 获取 Session（二选一，推荐书签方式）</h2>
+    <div>
+      把这个按钮<b>拖到浏览器书签栏</b>（只需这一次，以后都在）：
+      <div class="row"><a class="bm" id="bm" href="#">⚡ 一键获取 Session</a></div>
+      <ol>
+        <li>书签栏没显示先按 <code>Ctrl+Shift+B</code> 调出来，把上面按钮拖上去；</li>
+        <li>以后每次用：打开并登录 <a href="https://chatgpt.com" target="_blank" rel="noopener">chatgpt.com</a>，点书签栏这个按钮，session 会自动带回本页并填好；</li>
+        <li>拖不动时：复制下面这段代码，右键书签栏「添加网页」，名称随意、网址粘贴它。</li>
+      </ol>
+      <div class="row"><input type="text" id="bmCode" readonly><button class="small" id="copyBm">复制</button></div>
+    </div>
+    <div style="margin-top:12px">
+      <span class="hint">或用备用方式：打开 session 页面全选复制，回来点「从剪贴板导入」；也可以直接粘贴到框里，或把 session 的 .json 文件拖进来。</span>
+      <div class="row">
+        <button class="small" id="openSession">打开 Session 页面</button>
+        <button class="small" id="fromClipboard">从剪贴板导入</button>
+      </div>
+      <textarea id="pasteBox" placeholder="或把 session JSON 粘贴到这里（粘贴后自动识别）" style="margin-top:8px"></textarea>
+      <div class="drop" id="drop">把 session 的 .json 文件拖到这里</div>
+    </div>
+    <div class="acct" id="acct"></div>
+  </div>
+
+  <div class="card">
+    <h2>② 填写访问令牌</h2>
+    <label for="pat">工作空间访问令牌 <span class="hint">（at- 开头，在 ChatGPT 工作空间设置 → 凭据里创建；会注入为凭证的 headers）</span></label>
+    <input type="password" id="pat" placeholder="at-..." autocomplete="off">
+    <label class="check"><input type="checkbox" id="rememberPat" checked> 按账号记住令牌（只存这台浏览器本地）</label>
+  </div>
+
+  <div class="card">
+    <h2>③ 保存到 CPA</h2>
+    <label for="cpaBase">CPA 地址</label>
+    <input type="text" id="cpaBase" value="https://cpa.shrimpfd.me">
+    <label for="mgmtKey">管理密钥 <span class="hint">（登录 CPAMC 用的那个，只存本地、只发给你的 CPA；输错不要连点，管理接口连续 5 次鉴权失败会封 IP 约 30 分钟）</span></label>
+    <input type="password" id="mgmtKey" placeholder="管理密钥" autocomplete="off">
+    <label class="check"><input type="checkbox" id="rememberKey" checked> 在这台浏览器记住设置</label>
+    <div class="row">
+      <button class="primary" id="save">一键保存到 CPA</button>
+      <button id="download">只下载 JSON</button>
+      <button id="openCpa">打开 CPAMC 认证文件页</button>
+    </div>
+    <div id="status"></div>
+  </div>
+
+  <div class="foot">
+    安全说明：本页是纯静态页面，不加载任何第三方资源。书签带回的 session 数据走网址的 # 片段传递（不会发给任何服务器），本页读取后会立即把地址栏里的片段清掉。管理密钥与令牌只保存在你这台浏览器的本地存储里，唯一的网络请求是把生成的凭证发往你上面填的 CPA 地址。session 转出的凭证没有 refresh_token，过期后（CPAMC 里报 401）重新跑一遍本页即可续上，同名文件会更新原凭证。
+  </div>
+
+<script>
+"use strict";
+// === CORE START ===
+function b64urlJson(obj) {
+  const bytes = new TextEncoder().encode(JSON.stringify(obj));
+  let bin = "";
+  bytes.forEach((b) => { bin += String.fromCharCode(b); });
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function epochSeconds(value) {
+  if (value === undefined || value === null || value === "") return 0;
+  const n = Number(value);
+  if (Number.isFinite(n)) return Math.trunc(n > 1e11 ? n / 1000 : n);
+  const p = Date.parse(String(value));
+  return Number.isFinite(p) ? Math.trunc(p / 1000) : 0;
+}
+function isoFrom(value) {
+  if (value === undefined || value === null || value === "") return undefined;
+  const d = new Date(typeof value === "number" ? (value > 1e11 ? value : value * 1000) : value);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+function jwtPayload(token) {
+  try {
+    const part = String(token).split(".")[1];
+    if (!part) return null;
+    const b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    const bin = atob(b64.padEnd(Math.ceil(b64.length / 4) * 4, "="));
+    const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch { return null; }
+}
+function buildSyntheticIdToken(email, accountId, planType, userId, expiresAt) {
+  const now = Math.trunc(Date.now() / 1000);
+  const authInfo = { chatgpt_account_id: accountId };
+  if (planType) authInfo.chatgpt_plan_type = planType;
+  if (userId) { authInfo.chatgpt_user_id = userId; authInfo.user_id = userId; }
+  const payload = {
+    iat: now,
+    exp: epochSeconds(expiresAt) || now + 90 * 24 * 60 * 60,
+    "https://api.openai.com/auth": authInfo,
+  };
+  if (email) payload.email = email;
+  return b64urlJson({ alg: "none", typ: "JWT", cpa_synthetic: true }) + "." + b64urlJson(payload) + ".synthetic";
+}
+function convertSessionToCPA(session, patRaw) {
+  const warnings = [];
+  const s = session || {};
+  const accessToken = s.accessToken || s.access_token || (s.tokens && (s.tokens.access_token || s.tokens.accessToken)) || "";
+  if (!accessToken) throw new Error("session 里找不到 accessToken（可能没登录，或粘贴的不是 session JSON）");
+  const accountId = (s.account && s.account.id) || s.account_id || s.chatgpt_account_id || "";
+  if (!accountId) throw new Error("session 里找不到 account.id");
+  const email = (s.user && s.user.email) || s.email || "";
+  const userId = (s.user && s.user.id) || s.user_id || "";
+  const planType = (s.account && (s.account.planType || s.account.plan_type)) || s.plan_type || "";
+  const sessionToken = s.sessionToken || s.session_token || "";
+  const inputIdToken = s.idToken || s.id_token || "";
+  const expiresAt = s.expires || s.expiresAt || s.expired || "";
+  const payload = jwtPayload(accessToken);
+  const accessExp = payload && payload.exp ? new Date(payload.exp * 1000).toISOString() : undefined;
+
+  const out = {};
+  out.type = "codex";
+  out.account_id = accountId;
+  out.chatgpt_account_id = accountId;
+  if (email) { out.email = email; out.name = email; }
+  if (planType) { out.plan_type = planType; out.chatgpt_plan_type = planType; }
+  if (inputIdToken) {
+    out.id_token = inputIdToken;
+  } else {
+    out.id_token = buildSyntheticIdToken(email, accountId, planType, userId, expiresAt);
+    out.id_token_synthetic = true;
+  }
+  out.access_token = accessToken;
+  out.refresh_token = s.refreshToken || s.refresh_token || "";
+  if (sessionToken) out.session_token = sessionToken;
+  out.last_refresh = new Date().toISOString();
+  const expiredIso = isoFrom(expiresAt) || accessExp;
+  if (expiredIso) out.expired = expiredIso;
+
+  let pat = (patRaw || "").trim();
+  if (pat.toLowerCase().startsWith("bearer ")) pat = pat.slice(7).trim();
+  if (pat) {
+    out.headers = { authorization: "Bearer " + pat };
+    if (!pat.startsWith("at-")) warnings.push("提醒：令牌不是 at- 开头，请确认填的是工作空间访问令牌，不是别的 token。");
+  } else {
+    warnings.push("未填访问令牌：保存的凭证将不带 headers（绕二验需要令牌）。");
+  }
+  return { out, warnings, meta: { email, planType, accountId, accessExp, expiredIso } };
+}
+// === CORE END ===
+
+// === UPLOAD START ===
+async function uploadCredential(fetchFn, cpaBase, mgmtKey, filename, jsonText) {
+  const base = String(cpaBase || "").replace(/\/+$/, "");
+  const form = new FormData();
+  form.append("file", new Blob([jsonText], { type: "application/json" }), filename);
+  const res = await fetchFn(base + "/v8/management/credentials", {
+    method: "POST",
+    headers: { "Authorization": "Bearer " + mgmtKey, "X-Management-Key": mgmtKey },
+    body: form,
+  });
+  const text = await res.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch { /* 非 JSON 响应保留原文 */ }
+  return { status: res.status, ok: res.ok, data, text };
+}
+// === UPLOAD END ===
+
+// === BOOKMARKLET START ===
+function buildBookmarklet(toolUrl) {
+  const code =
+    "(function(){var H=" + JSON.stringify(toolUrl) + ";" +
+    "function go(d){var s=JSON.stringify(d);var b=btoa(unescape(encodeURIComponent(s))).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');location.href=H+'#s='+b;}" +
+    "if(location.hostname!=='chatgpt.com'){alert('请先打开并登录 chatgpt.com，再点一次这个书签');location.href='https://chatgpt.com';return;}" +
+    "if(location.pathname.indexOf('/api/auth/session')===0){try{go(JSON.parse(document.body.innerText));}catch(e){alert('读取 session 失败：'+e.message);}return;}" +
+    "fetch('/api/auth/session',{credentials:'include'}).then(function(r){return r.json();}).then(function(d){if(!d||!d.accessToken){alert('没有拿到 session，请确认已登录 ChatGPT');return;}go(d);}).catch(function(e){alert('获取 session 失败：'+e.message);});" +
+    "})()";
+  return "javascript:" + code;
+}
+function decodeHashPayload(hash) {
+  const b64 = hash.replace(/^#s=/, "").replace(/-/g, "+").replace(/_/g, "/");
+  const bin = atob(b64.padEnd(Math.ceil(b64.length / 4) * 4, "="));
+  return JSON.parse(decodeURIComponent(escape(bin)));
+}
+// === BOOKMARKLET END ===
+
+const $ = (id) => document.getElementById(id);
+const SESSION_URL = "https://chatgpt.com/api/auth/session";
+const LS = { pat: "s2c_patByEmail", key: "s2c_mgmtKey", base: "s2c_cpaBase" };
+let captured = null;
+
+function setStatus(msg, cls) { const el = $("status"); el.textContent = msg || ""; el.className = cls || ""; }
+function lsGet(k, dflt) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : dflt; } catch { return dflt; } }
+function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* 忽略 */ } }
+
+function acceptSession(session) {
+  const probe = convertSessionToCPA(session, "");
+  captured = { session, meta: probe.meta };
+  const el = $("acct");
+  el.style.display = "block";
+  el.textContent = "已获取账号：" + (probe.meta.email || "?") + "\n套餐：" + (probe.meta.planType || "?") + "\naccount_id：" + probe.meta.accountId + (probe.meta.accessExp ? "\nsession 的 access_token 到期：" + probe.meta.accessExp : "");
+  const savedPat = (lsGet(LS.pat, {}))[probe.meta.email];
+  if (savedPat && !$("pat").value) {
+    $("pat").value = savedPat;
+    setStatus("已获取 session，并自动填入这个账号上次记住的访问令牌。确认无误后点「一键保存到 CPA」。", "ok");
+  } else {
+    setStatus("已获取 session。请填访问令牌，然后点「一键保存到 CPA」。", "ok");
+  }
+}
+
+function acceptSessionText(text, source) {
+  try {
+    const obj = JSON.parse(text);
+    acceptSession(obj);
+  } catch (e) {
+    setStatus(source + "失败：内容不是合法的 session JSON（" + e.message + "）", "err");
+  }
+}
+
+function persistSettings() {
+  if ($("rememberKey").checked) {
+    lsSet(LS.key, $("mgmtKey").value.trim());
+    lsSet(LS.base, $("cpaBase").value.trim());
+  }
+}
+
+async function doSave() {
+  const mgmtKey = $("mgmtKey").value.trim();
+  if (!mgmtKey) { setStatus("先填管理密钥（在上面③里）。", "err"); return; }
+  if (!captured) { setStatus("还没有 session：先做①（点书签栏按钮，或用备用方式导入）。", "err"); return; }
+  let result;
+  try { result = convertSessionToCPA(captured.session, $("pat").value); }
+  catch (e) { setStatus("转换失败：" + e.message, "err"); return; }
+  const { out, warnings, meta } = result;
+  const filename = (meta.email || "cpa-account") + ".json";
+  setStatus("正在保存到 CPA...", "");
+  try {
+    const r = await uploadCredential(fetch.bind(window), $("cpaBase").value, mgmtKey, filename, JSON.stringify(out, null, 2));
+    if (r.ok) {
+      persistSettings();
+      if ($("rememberPat").checked && $("pat").value.trim() && meta.email) {
+        const map = lsGet(LS.pat, {});
+        let pat = $("pat").value.trim();
+        if (pat.toLowerCase().startsWith("bearer ")) pat = pat.slice(7).trim();
+        map[meta.email] = pat;
+        lsSet(LS.pat, map);
+      }
+      setStatus("保存成功 ✅ 凭证 " + filename + " 已进入 CPA。点「打开 CPAMC 认证文件页」刷新就能看到这张卡片。" + (warnings.length ? "\n" + warnings.join("\n") : ""), "ok");
+    } else if (r.status === 401) {
+      setStatus("保存失败：管理密钥不对（401）。核对后再试，不要连续多次尝试——连续 5 次鉴权失败会封 IP 约 30 分钟。", "err");
+    } else if (r.status === 403) {
+      setStatus("保存失败：403。可能是远程管理未开启，或这个 IP 已被临时封禁（等约 30 分钟再试）。", "err");
+    } else if (r.status === 404) {
+      setStatus("保存失败：404。确认 CPA 地址填对，且 CPA 版本支持 v8 管理接口。", "err");
+    } else {
+      setStatus("保存失败：HTTP " + r.status + "\n" + (r.text || "").slice(0, 300), "err");
+    }
+  } catch (e) {
+    setStatus("保存失败：网络错误（" + e.message + "）。确认这台浏览器能打开 CPAMC。", "err");
+  }
+}
+
+function doDownload() {
+  if (!captured) { setStatus("还没有 session：先做①。", "err"); return; }
+  try {
+    const { out, warnings, meta } = convertSessionToCPA(captured.session, $("pat").value);
+    const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = (meta.email || "cpa-account") + ".json";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    setStatus("已下载 JSON，可在 CPAMC 认证文件页手动上传。" + (warnings.length ? "\n" + warnings.join("\n") : ""), "ok");
+  } catch (e) { setStatus("转换失败：" + e.message, "err"); }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const toolUrl = location.href.split("#")[0];
+  const bm = buildBookmarklet(toolUrl);
+  $("bm").href = bm;
+  $("bmCode").value = bm;
+  $("bm").addEventListener("click", (e) => { e.preventDefault(); alert("这个按钮是拖到书签栏用的，不能直接点。按住它拖到浏览器顶部的书签栏里松手即可。"); });
+  $("copyBm").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(bm); setStatus("书签代码已复制。右键书签栏 →「添加网页」→ 网址粘贴它，名称随意。", "ok"); }
+    catch { $("bmCode").select(); document.execCommand("copy"); setStatus("书签代码已复制。", "ok"); }
+  });
+
+  const savedKey = lsGet(LS.key, "");
+  const savedBase = lsGet(LS.base, "");
+  if (savedKey) $("mgmtKey").value = savedKey;
+  if (savedBase) $("cpaBase").value = savedBase;
+
+  if (location.hash.startsWith("#s=")) {
+    try {
+      const session = decodeHashPayload(location.hash);
+      history.replaceState(null, "", location.pathname + location.search);
+      acceptSession(session);
+    } catch (e) {
+      history.replaceState(null, "", location.pathname + location.search);
+      setStatus("书签带回的 session 解析失败：" + e.message, "err");
+    }
+  }
+
+  $("openSession").addEventListener("click", () => window.open(SESSION_URL, "_blank"));
+  $("fromClipboard").addEventListener("click", async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) { setStatus("剪贴板是空的。先在 session 页面按 Ctrl+A、Ctrl+C 复制全部内容。", "warn"); return; }
+      acceptSessionText(text, "从剪贴板导入");
+    } catch {
+      setStatus("浏览器不允许直接读剪贴板（需要授权）。改用粘贴框：点下面的框按 Ctrl+V。", "warn");
+      $("pasteBox").focus();
+    }
+  });
+  $("pasteBox").addEventListener("input", () => {
+    const text = $("pasteBox").value.trim();
+    if (text.length > 50) acceptSessionText(text, "粘贴识别");
+  });
+  const drop = $("drop");
+  ["dragover", "dragenter"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+  drop.addEventListener("drop", async (e) => {
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!f) return;
+    acceptSessionText(await f.text(), "文件导入");
+  });
+
+  $("save").addEventListener("click", doSave);
+  $("download").addEventListener("click", doDownload);
+  $("openCpa").addEventListener("click", () => {
+    window.open($("cpaBase").value.replace(/\/+$/, "") + "/management.html#/auth-files", "_blank");
+  });
+});
+</script>
+</body>
+</html>
